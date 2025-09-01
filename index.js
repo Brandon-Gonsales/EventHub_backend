@@ -34,7 +34,7 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
     try {
         const {
             name, lastName, email, phone, academicDegree,
-            department, institution, career,
+            department, institution, career, vendorCode,
             selectedServices, totalAmount, paymentMethod
         } = req.body;
         
@@ -42,7 +42,7 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
 
         const submissionData = {
             name, lastName, email, phone, academicDegree, department,
-            institution, career,
+            institution, career, vendorCode,
             selectedServices: JSON.parse(selectedServices), // Fue enviado como string
             totalAmount, paymentMethod,
         };
