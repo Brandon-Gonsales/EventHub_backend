@@ -13,16 +13,21 @@ const port = process.env.PORT || 4000;
 
 // Configuración de Google
 const { GOOGLE_SHEET_ID } = process.env;
-const KEYFILEPATH = path.join(__dirname, 'credentials.json');
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'];
 
+// 1. Parsea las credenciales desde la variable de entorno (que es un string)
+const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+
+// 2. Usa el objeto de credenciales directamente
 const auth = new google.auth.GoogleAuth({
-    keyFile: KEYFILEPATH,
+    credentials,
     scopes: SCOPES,
 });
 
 // Usa CORS
-app.use(cors());
+app.use(cors({
+  origin: 'https://event-hub-frontend-gamma.vercel.app'
+}));
 
 // Configuración de Multer en memoria
 const storage = multer.memoryStorage();
