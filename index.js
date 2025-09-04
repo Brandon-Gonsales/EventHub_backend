@@ -4,7 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const { google } = require('googleapis');
-const { VertexAI } = require('@google-cloud/vertexai'); // <-- NUEVA LIBRERÍA
+const { GoogleGenerativeAI } = require('@google/generative-ai'); // <-- NUEVA LIBRERÍA
 const fetch = require('node-fetch');
 const FormData = require('form-data');
 require('dotenv').config();
@@ -14,11 +14,12 @@ const {
     GOOGLE_SHEET_ID, 
     GOOGLE_CREDENTIALS_JSON, 
     TELEGRAM_BOT_TOKEN, 
-    TELEGRAM_CHAT_ID 
+    TELEGRAM_CHAT_ID,
+    GEMINI_API_KEY   
+    
 } = process.env;
 
-// ... (El bloque de verificación de variables de entorno es el mismo) ...
-if (!GOOGLE_SHEET_ID || !GOOGLE_CREDENTIALS_JSON || !TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+if (!GOOGLE_SHEET_ID || !GOOGLE_CREDENTIALS_JSON || !TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || !GEMINI_API_KEY) {
     console.error("FATAL ERROR: Faltan una o más variables de entorno.");
     process.exit(1);
 }
@@ -30,12 +31,8 @@ try {
     process.exit(1);
 }
 
-// ¡CAMBIAMOS EL SCOPE! Vertex AI usa el scope general de cloud-platform.
-const SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/cloud-platform'];
-const auth = new google.auth.GoogleAuth({
-    credentials,
-    scopes: SCOPES,
-});
+const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
+const auth = new google.auth.GoogleAuth({ credentials, scopes: SCOPES });
 // --- FIN DEL BLOQUE DE CONFIGURACIÓN ---
 
 const app = express();
@@ -49,56 +46,42 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 
-// --- NUEVA FUNCIÓN INTELIGENTE CON GEMINI ---
+// --- FUNCIÓN CON GEMINI USANDO API KEY (MÁS SIMPLE) ---
 async function extractDataWithGemini(imageBuffer) {
     try {
-        const vertex_ai = new VertexAI({
-            project: credentials.project_id,
-            location: 'us-central1'
-        });
-        const model = 'gemini-pro-vision'; // Modelo multimodal
-
-        const generativeModel = vertex_ai.preview.getGenerativeModel({ model });
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const model = genAI.getGenerativeModel({ model: "gemini-pro-vision" });
 
         const imagePart = {
             inlineData: {
-                data: imageBuffer.toString('base64'),
-                mimeType: 'image/jpeg', // O 'image/png'
+                data: imageBuffer.toString("base64"),
+                mimeType: "image/jpeg", // o 'image/png'
             },
         };
-
-        // EL PROMPT: Aquí está la magia. Le decimos a Gemini exactamente qué hacer.
+        
         const prompt = `
             Eres un experto extrayendo datos de comprobantes de pago peruanos (Yape, Plin, etc.).
             Analiza la siguiente imagen de un comprobante de pago y extrae la siguiente información en formato JSON:
             - "sender": El nombre completo de la persona que envió el dinero.
             - "receiver": El nombre completo de la persona que recibió el dinero.
             - "amount": El monto de la transacción, como un string numérico (ej: "250.00").
-            - "dateTime": La fecha y hora de la transacción en el formato más completo posible que encuentres.
+            - "dateTime": La fecha y hora de la transacción en el formato más completo posible.
 
             Si no puedes encontrar un campo, usa el valor "No encontrado".
             Responde únicamente con el objeto JSON y nada más.
         `;
 
-        const request = {
-            contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
-        };
-
-        const responseStream = await generativeModel.generateContentStream(request);
-        const aggregatedResponse = await responseStream.response;
-        const fullTextResponse = aggregatedResponse.candidates[0].content.parts[0].text;
-
-        // Limpiamos la respuesta para asegurarnos de que es solo el JSON
-        const jsonResponse = fullTextResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+        const result = await model.generateContent([prompt, imagePart]);
+        const response = await result.response;
+        const text = response.text();
+        
+        const jsonResponse = text.replace(/```json/g, '').replace(/```/g, '').trim();
         return JSON.parse(jsonResponse);
 
     } catch (error) {
-        console.error("Error en la API de Gemini:", error);
+        console.error("Error en la API de Gemini (AI Studio):", error);
         return {
-            sender: 'Error Gemini',
-            receiver: 'Error Gemini',
-            amount: 'Error Gemini',
-            dateTime: 'Error Gemini',
+            sender: 'Error Gemini', receiver: 'Error Gemini', amount: 'Error Gemini', dateTime: 'Error Gemini',
         };
     }
 }
@@ -153,8 +136,7 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
             Monto_Total: totalAmount,
         };
         const jsonDataString = `\`\`\`json\n${JSON.stringify(submissionData, null, 2)}\n\`\`\``;
-
-        // ... (El resto del código de envío a Telegram es el mismo) ...
+        
         if (paymentMethod === 'qr' && file) {
             const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
             const formData = new FormData();
@@ -164,10 +146,10 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
             formData.append('photo', file.buffer, { filename: file.originalname });
             await fetch(telegramApiUrl, { method: 'POST', body: formData });
         } else {
-             // (código para enviar solo texto si no hay QR)
+            // Manejo de caso sin QR
         }
 
-        res.status(200).json({ message: "Registro y OCR con Gemini exitosos!" });
+        res.status(200).json({ message: "Registro y OCR con Gemini (AI Studio) exitosos!" });
 
     } catch (error) {
         console.error("Error al procesar el registro:", error);
