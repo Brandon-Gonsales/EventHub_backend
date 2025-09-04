@@ -1,4 +1,4 @@
-// index.js - Versión Definitiva con Mensaje de Telegram Limpio
+// index.js - Versión Definitiva con Código de Compra
 
 const express = require('express');
 const cors = require('cors');
@@ -44,48 +44,49 @@ app.use(cors({
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
+// --- NUEVA FUNCIÓN PARA GENERAR CÓDIGO ÚNICO ---
+function generatePurchaseCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 8; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
+
 // --- FUNCIÓN CON GEMINI USANDO API KEY ---
 async function extractDataWithGemini(imageBuffer) {
+    // ... (Esta función no cambia, la dejamos como está)
     try {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-
-        const imagePart = {
-            inlineData: {
-                data: imageBuffer.toString("base64"),
-                mimeType: "image/jpeg",
-            },
-        };
-        
+        const imagePart = { inlineData: { data: imageBuffer.toString("base64"), mimeType: "image/jpeg" } };
         const prompt = `
             Eres un experto extrayendo datos de comprobantes de pago peruanos (Yape, Plin, etc.).
-            Analiza la siguiente imagen de un comprobante de pago y extrae la siguiente información en formato JSON:
-            - "sender": El nombre completo de la persona que envió el dinero.
-            - "receiver": El nombre completo de la persona que recibió el dinero.
-            - "amount": El monto de la transacción, como un string numérico (ej: "250.00").
-            - "dateTime": La fecha y hora de la transacción en el formato más completo posible.
-            Si no puedes encontrar un campo, usa el valor "No encontrado".
-            Responde únicamente con el objeto JSON y nada más.
-        `;
-
+            Analiza la siguiente imagen y extrae la información en formato JSON:
+            - "sender": Nombre completo de quien envió el dinero.
+            - "receiver": Nombre completo de quien recibió el dinero.
+            - "amount": Monto de la transacción como string numérico (ej: "250.00").
+            - "dateTime": Fecha y hora de la transacción.
+            Si no encuentras un campo, usa el valor "No encontrado".
+            Responde únicamente con el objeto JSON.`;
         const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
         const text = response.text();
-        
         const jsonResponse = text.replace(/```json/g, '').replace(/```/g, '').trim();
         return JSON.parse(jsonResponse);
-
     } catch (error) {
         console.error("Error en la API de Gemini (AI Studio):", error);
-        return {
-            sender: 'Error Gemini', receiver: 'Error Gemini', amount: 'Error Gemini', dateTime: 'Error Gemini',
-        };
+        return { sender: 'Error Gemini', receiver: 'Error Gemini', amount: 'Error Gemini', dateTime: 'Error Gemini' };
     }
 }
 
 // Endpoint de la API
 app.post('/api/submit', upload.single('proof'), async (req, res) => {
     try {
+        // --- ACCIÓN #0: GENERAR CÓDIGO DE COMPRA ---
+        const purchaseCode = generatePurchaseCode();
+
         const {
             name, lastName, email, phone, academicDegree,
             department, institution, career, resellerCode,
@@ -99,7 +100,9 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
             ocrData = await extractDataWithGemini(file.buffer);
         }
 
+        // --- ACCIÓN #1: GUARDAR TODO EN GOOGLE SHEETS (CON EL NUEVO CÓDIGO) ---
         const newRow = [
+            purchaseCode, // <-- ¡NUEVA PRIMERA COLUMNA!
             name || '', lastName || '', email || '', phone || '', academicDegree || '',
             department || '', institution || '', career || '', resellerCode || '',
             selectedServices, totalAmount || '', paymentMethod || '',
@@ -112,17 +115,18 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
         const sheets = google.sheets({ version: 'v4', auth });
         await sheets.spreadsheets.values.append({
             spreadsheetId: GOOGLE_SHEET_ID,
-            range: 'Respuestas!A:S',
+            range: 'Respuestas!A:T', // <-- ¡IMPORTANTE! RANGO ACTUALIZADO A LA COLUMNA T
             valueInputOption: 'USER_ENTERED',
             resource: {
                 values: [newRow],
             },
         });
 
-        // --- ACCIÓN #2: ENVIAR NOTIFICACIÓN A TELEGRAM (con datos de Gemini) ---
-        // ¡Aquí está el cambio! Creamos un mensaje de texto legible.
+        // --- ACCIÓN #2: ENVIAR NOTIFICACIÓN A TELEGRAM (CON EL NUEVO CÓDIGO) ---
         const telegramCaption = `
 Nueva Inscripción Recibida 🚀
+
+Código de Compra: *${purchaseCode}*
 
 --- Datos del Inscrito ---
 Nombre: ${name} ${lastName}
@@ -139,6 +143,8 @@ Fecha (OCR): ${ocrData.dateTime || 'No detectado'}
         const telegramTextOnly = `
 Nueva Inscripción (Sin QR) 📝
 
+Código de Compra: *${purchaseCode}*
+
 --- Datos del Inscrito ---
 Nombre: ${name} ${lastName}
 Monto Total Pagado: ${totalAmount}
@@ -149,8 +155,9 @@ Método de Pago: ${paymentMethod}
             const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
             const formData = new FormData();
             formData.append('chat_id', TELEGRAM_CHAT_ID);
-            formData.append('caption', telegramCaption); // <-- Usamos el nuevo texto formateado
-            // Nota: Hemos quitado 'parse_mode' para evitar errores con caracteres especiales en los nombres.
+            formData.append('caption', telegramCaption);
+            // Re-añadimos Markdown para que el código salga en negrita
+            formData.append('parse_mode', 'Markdown'); 
             formData.append('photo', file.buffer, { filename: file.originalname });
             await fetch(telegramApiUrl, { method: 'POST', body: formData });
         } else {
@@ -160,7 +167,8 @@ Método de Pago: ${paymentMethod}
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     chat_id: TELEGRAM_CHAT_ID,
-                    text: telegramTextOnly, // <-- Mensaje más simple si no hay QR
+                    text: telegramTextOnly,
+                    parse_mode: 'Markdown',
                 }),
             });
         }
