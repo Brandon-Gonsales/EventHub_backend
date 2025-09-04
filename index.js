@@ -39,17 +39,19 @@ async function uploadToDrive(fileObject) {
     bufferStream.end(fileObject.buffer);
 
     const drive = google.drive({ version: 'v3', auth });
-    const { data } = await drive.files.create({
-        media: {
-            mimeType: fileObject.mimetype,
-            body: bufferStream,
-        },
-        requestBody: {
-            name: fileObject.originalname,
-            parents: [], // Puedes especificar una carpeta de Drive aquí si quieres
-        },
-        fields: 'id,webViewLink',
-    });
+const { GOOGLE_DRIVE_FOLDER_ID } = process.env; // Asegúrate de leer la nueva variable
+
+const { data } = await drive.files.create({
+    media: {
+        mimeType: fileObject.mimetype,
+        body: bufferStream,
+    },
+    requestBody: {
+        name: fileObject.originalname,
+        parents: [GOOGLE_DRIVE_FOLDER_ID], // <--- AHORA LE DECIMOS DÓNDE GUARDARLO
+    },
+    fields: 'id,webViewLink',
+});
 
     // Hacer el archivo público para que el enlace funcione
     await drive.permissions.create({
