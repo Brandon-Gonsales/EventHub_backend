@@ -1,10 +1,10 @@
-// index.js - Versión Final: Sheets + Telegram + OCR con GEMINI
+// index.js - Versión Definitiva con Mensaje de Telegram Limpio
 
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const { google } = require('googleapis');
-const { GoogleGenerativeAI } = require('@google/generative-ai'); // <-- NUEVA LIBRERÍA
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fetch = require('node-fetch');
 const FormData = require('form-data');
 require('dotenv').config();
@@ -16,7 +16,6 @@ const {
     TELEGRAM_BOT_TOKEN, 
     TELEGRAM_CHAT_ID,
     GEMINI_API_KEY   
-    
 } = process.env;
 
 if (!GOOGLE_SHEET_ID || !GOOGLE_CREDENTIALS_JSON || !TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || !GEMINI_API_KEY) {
@@ -45,17 +44,16 @@ app.use(cors({
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-
-// --- FUNCIÓN CON GEMINI USANDO API KEY (MÁS SIMPLE) ---
+// --- FUNCIÓN CON GEMINI USANDO API KEY ---
 async function extractDataWithGemini(imageBuffer) {
     try {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
         const imagePart = {
             inlineData: {
                 data: imageBuffer.toString("base64"),
-                mimeType: "image/jpeg", // o 'image/png'
+                mimeType: "image/jpeg",
             },
         };
         
@@ -66,7 +64,6 @@ async function extractDataWithGemini(imageBuffer) {
             - "receiver": El nombre completo de la persona que recibió el dinero.
             - "amount": El monto de la transacción, como un string numérico (ej: "250.00").
             - "dateTime": La fecha y hora de la transacción en el formato más completo posible.
-
             Si no puedes encontrar un campo, usa el valor "No encontrado".
             Responde únicamente con el objeto JSON y nada más.
         `;
@@ -86,7 +83,6 @@ async function extractDataWithGemini(imageBuffer) {
     }
 }
 
-
 // Endpoint de la API
 app.post('/api/submit', upload.single('proof'), async (req, res) => {
     try {
@@ -99,57 +95,77 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
         const file = req.file;
         let ocrData = {};
 
-        // --- ACCIÓN #0: EXTRAER DATOS CON GEMINI SI HAY IMAGEN ---
         if (paymentMethod === 'qr' && file) {
             ocrData = await extractDataWithGemini(file.buffer);
         }
 
-        // --- ACCIÓN #1: GUARDAR TODO EN GOOGLE SHEETS ---
         const newRow = [
             name || '', lastName || '', email || '', phone || '', academicDegree || '',
             department || '', institution || '', career || '', resellerCode || '',
             selectedServices, totalAmount || '', paymentMethod || '',
             (paymentMethod === 'qr' && file) ? 'Sí' : 'No',
             new Date().toISOString(),
-            // Nuevas columnas con datos de Gemini
-            ocrData.sender || 'N/A',
-            ocrData.receiver || 'N/A',
-            ocrData.amount || 'N/A',
-            ocrData.dateTime || 'N/A',
+            ocrData.sender || 'N/A', ocrData.receiver || 'N/A',
+            ocrData.amount || 'N/A', ocrData.dateTime || 'N/A',
         ];
 
         const sheets = google.sheets({ version: 'v4', auth });
         await sheets.spreadsheets.values.append({
             spreadsheetId: GOOGLE_SHEET_ID,
-            range: 'Respuestas!A:S', // Asegúrate de que el rango sea correcto
+            range: 'Respuestas!A:S',
             valueInputOption: 'USER_ENTERED',
             resource: {
                 values: [newRow],
             },
         });
 
-
         // --- ACCIÓN #2: ENVIAR NOTIFICACIÓN A TELEGRAM (con datos de Gemini) ---
-        const submissionData = {
-            Formulario: { name, lastName, email, phone },
-            Comprobante_OCR: { ...ocrData },
-            Monto_Total: totalAmount,
-        };
-        const jsonDataString = `\`\`\`json\n${JSON.stringify(submissionData, null, 2)}\n\`\`\``;
+        // ¡Aquí está el cambio! Creamos un mensaje de texto legible.
+        const telegramCaption = `
+Nueva Inscripción Recibida 🚀
+
+--- Datos del Inscrito ---
+Nombre: ${name} ${lastName}
+Monto Total Pagado: ${totalAmount}
+Método de Pago: ${paymentMethod}
+
+--- Verificación OCR del Comprobante ---
+Emisor: ${ocrData.sender || 'No detectado'}
+Receptor: ${ocrData.receiver || 'No detectado'}
+Monto (OCR): ${ocrData.amount || 'No detectado'}
+Fecha (OCR): ${ocrData.dateTime || 'No detectado'}
+        `;
+
+        const telegramTextOnly = `
+Nueva Inscripción (Sin QR) 📝
+
+--- Datos del Inscrito ---
+Nombre: ${name} ${lastName}
+Monto Total Pagado: ${totalAmount}
+Método de Pago: ${paymentMethod}
+        `;
         
         if (paymentMethod === 'qr' && file) {
             const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
             const formData = new FormData();
             formData.append('chat_id', TELEGRAM_CHAT_ID);
-            formData.append('caption', jsonDataString);
-            formData.append('parse_mode', 'MarkdownV2');
+            formData.append('caption', telegramCaption); // <-- Usamos el nuevo texto formateado
+            // Nota: Hemos quitado 'parse_mode' para evitar errores con caracteres especiales en los nombres.
             formData.append('photo', file.buffer, { filename: file.originalname });
             await fetch(telegramApiUrl, { method: 'POST', body: formData });
         } else {
-            // Manejo de caso sin QR
+            const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+            await fetch(telegramApiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chat_id: TELEGRAM_CHAT_ID,
+                    text: telegramTextOnly, // <-- Mensaje más simple si no hay QR
+                }),
+            });
         }
 
-        res.status(200).json({ message: "Registro y OCR con Gemini (AI Studio) exitosos!" });
+        res.status(200).json({ message: "Registro y OCR con Gemini exitosos!" });
 
     } catch (error) {
         console.error("Error al procesar el registro:", error);
