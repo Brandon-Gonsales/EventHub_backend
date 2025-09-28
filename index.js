@@ -1,4 +1,4 @@
-// index.js - Versión con Códigos Primos
+// index.js - Versión con Códigos Primos y Verificación de Duplicados
 
 const express = require('express');
 const cors = require('cors');
@@ -9,7 +9,7 @@ const fetch = require('node-fetch');
 const FormData = require('form-data');
 require('dotenv').config();
 
-// --- INICIO DEL BLOQUE DE CONFIGURACIÓN Y VERIFICACIÓN ---
+// --- Bloque de configuración (sin cambios) ---
 const { 
     GOOGLE_SHEET_ID, 
     GOOGLE_CREDENTIALS_JSON, 
@@ -32,7 +32,7 @@ try {
 
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 const auth = new google.auth.GoogleAuth({ credentials, scopes: SCOPES });
-// --- FIN DEL BLOQUE DE CONFIGURACIÓN ---
+// --- Fin del bloque de configuración ---
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -44,6 +44,7 @@ app.use(cors({
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
+// --- Funciones de generación de códigos (sin cambios) ---
 function generatePurchaseCode() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let result = '';
@@ -52,14 +53,6 @@ function generatePurchaseCode() {
     }
     return result;
 }
-
-// --- CAMBIO AQUÍ: NUEVAS FUNCIONES PARA GENERAR NÚMEROS PRIMOS ---
-
-/**
- * Verifica si un número es primo.
- * @param {number} num El número a verificar.
- * @returns {boolean} True si es primo, false si no.
- */
 function isPrime(num) {
     if (num <= 1) return false;
     if (num <= 3) return true;
@@ -69,26 +62,67 @@ function isPrime(num) {
     }
     return true;
 }
-
-/**
- * Genera un número primo aleatorio de 6 dígitos.
- * @returns {number} Un número primo entre 100000 y 999999.
- */
 function generateSixDigitPrime() {
     let primeCandidate;
     do {
-        // Genera un número entre 100,000 y 999,999
         primeCandidate = Math.floor(100000 + Math.random() * 900000);
     } while (!isPrime(primeCandidate));
     return primeCandidate;
 }
-// --- FIN DEL CAMBIO ---
+// --- Fin de funciones ---
 
+
+// *****************************************************************************
+// --- INICIO DEL CAMBIO #1: NUEVA FUNCIÓN PARA LEER EL GOOGLE SHEET ---
+// *****************************************************************************
+
+/**
+ * Obtiene todos los pares de códigos primos ya guardados en el Google Sheet.
+ * @returns {Promise<Set<string>>} Un Set con los pares existentes en formato "primoMenor-primoMayor".
+ */
+async function getExistingPrimePairs() {
+    try {
+        const sheets = google.sheets({ version: 'v4', auth });
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: GOOGLE_SHEET_ID,
+            // ¡IMPORTANTE! Asume que los primos están en las columnas K y L.
+            // Si cambias las columnas, debes actualizar este rango.
+            range: 'Respuestas!K:L', 
+        });
+
+        const rows = response.data.values;
+        const existingPairs = new Set();
+
+        if (rows && rows.length) {
+            // Empezamos en 1 para saltarnos la fila de cabecera
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (row[0] && row[1]) {
+                    // Ordenamos los números para que el par (A, B) sea igual que (B, A)
+                    const pair = [parseInt(row[0]), parseInt(row[1])].sort((a, b) => a - b);
+                    existingPairs.add(`${pair[0]}-${pair[1]}`);
+                }
+            }
+        }
+        console.log(`Se encontraron ${existingPairs.size} pares de primos existentes.`);
+        return existingPairs;
+    } catch (error) {
+        console.error("Advertencia: No se pudieron obtener los pares de primos existentes. Se procederá sin verificación.", error.message);
+        // Si falla (ej. la hoja es nueva), devolvemos un Set vacío para que la app no se caiga.
+        return new Set();
+    }
+}
+
+// *****************************************************************************
+// --- FIN DEL CAMBIO #1 ---
+// *****************************************************************************
+
+
+// --- Función de Gemini (sin cambios) ---
 async function extractDataWithGemini(imageBuffer) {
-    // ... (Esta función no cambia)
     try {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
         const imagePart = { inlineData: { data: imageBuffer.toString("base64"), mimeType: "image/jpeg" } };
         const prompt = `
             Eres un experto extrayendo datos de comprobantes de pago peruanos (Yape, Plin, etc.).
@@ -114,20 +148,44 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
     try {
         const purchaseCode = generatePurchaseCode();
 
-        // --- CAMBIO AQUÍ: Se reemplaza resellerCode por userProvidedCode ---
         const {
             name, lastName, email, phone, academicDegree,
-            department, institution, career, userProvidedCode, // <-- CAMBIADO
+            department, institution, career, userProvidedCode,
             selectedServices, totalAmount, paymentMethod
         } = req.body;
         
-        // --- CAMBIO AQUÍ: Se generan los 3 nuevos códigos para cada registro ---
-        const primeA = generateSixDigitPrime();
-        let primeB = generateSixDigitPrime();
-        while (primeA === primeB) { // Nos aseguramos de que no sean el mismo número
+
+        // *****************************************************************************
+        // --- INICIO DEL CAMBIO #2: LÓGICA DE GENERACIÓN DE PRIMOS ACTUALIZADA ---
+        // *****************************************************************************
+
+        const existingPairs = await getExistingPrimePairs();
+        let primeA, primeB, pairKey;
+        let attempts = 0;
+
+        do {
+            primeA = generateSixDigitPrime();
             primeB = generateSixDigitPrime();
-        }
-        const productC = primeA * primeB; // El producto de los dos primos
+            
+            // Creamos una clave única y ordenada para el par
+            const sortedPair = [primeA, primeB].sort((a, b) => a - b);
+            pairKey = `${sortedPair[0]}-${sortedPair[1]}`;
+            
+            attempts++;
+            if (attempts > 1) {
+                console.log(`Intento #${attempts}: El par ${pairKey} ya existía. Generando uno nuevo...`);
+            }
+
+        // Repetimos si A y B son iguales O si el par ya existe en nuestro Set
+        } while (primeA === primeB || existingPairs.has(pairKey));
+
+        console.log(`Par único encontrado: ${pairKey} en ${attempts} intento(s).`);
+        const productC = primeA * primeB;
+
+        // *****************************************************************************
+        // --- FIN DEL CAMBIO #2 ---
+        // *****************************************************************************
+
 
         const file = req.file;
         let ocrData = {};
@@ -136,15 +194,14 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
             ocrData = await extractDataWithGemini(file.buffer);
         }
 
-        // --- CAMBIO AQUÍ: La nueva fila para Google Sheets ---
         const newRow = [
             purchaseCode,
             name || '', lastName || '', email || '', phone || '', academicDegree || '',
             department || '', institution || '', career || '',
-            userProvidedCode || '', // El código que el usuario ingresó
-            primeA,               // Código Primo A (Generado)
-            primeB,               // Código Primo B (Generado)
-            productC.toString(),  // Código Producto C (Generado)
+            userProvidedCode || '',
+            primeA,               // Código Primo A (Generado y ÚNICO)
+            primeB,               // Código Primo B (Generado y ÚNICO)
+            productC.toString(),
             selectedServices, totalAmount || '', paymentMethod || '',
             (paymentMethod === 'qr' && file) ? 'Sí' : 'No',
             new Date().toISOString(),
@@ -155,7 +212,6 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
         const sheets = google.sheets({ version: 'v4', auth });
         await sheets.spreadsheets.values.append({
             spreadsheetId: GOOGLE_SHEET_ID,
-            // --- ¡IMPORTANTE! El rango se expande para incluir las nuevas columnas ---
             range: 'Respuestas!A:W', 
             valueInputOption: 'USER_ENTERED',
             resource: {
@@ -163,7 +219,7 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
             },
         });
 
-        // --- CAMBIO AQUÍ: Mensajes de Telegram actualizados ---
+        // El resto del código para Telegram y la respuesta no necesita cambios.
         const telegramCaption = `
 Nueva Inscripción Recibida 🚀
 
@@ -223,7 +279,7 @@ Producto C (Generado): \`${productC}\`
             });
         }
 
-        res.status(200).json({ message: "Registro con códigos primos exitoso!" });
+        res.status(200).json({ message: "Registro con códigos primos único exitoso!" });
 
     } catch (error) {
         console.error("Error al procesar el registro:", error);
