@@ -1,4 +1,4 @@
-// index.js - Versión Simplificada con Códigos Primos
+// index.js - Versión con Códigos Primos (Corregida y Simplificada)
 
 const express = require('express');
 const cors = require('cors');
@@ -9,7 +9,7 @@ const fetch = require('node-fetch');
 const FormData = require('form-data');
 require('dotenv').config();
 
-// --- INICIO DEL BLOQUE DE CONFIGURACIÓN Y VERIFICACIÓN ---
+// --- Bloque de configuración (sin cambios) ---
 const { 
     GOOGLE_SHEET_ID, 
     GOOGLE_CREDENTIALS_JSON, 
@@ -29,23 +29,21 @@ try {
     console.error("FATAL ERROR: No se pudo parsear GOOGLE_CREDENTIALS_JSON.", error);
     process.exit(1);
 }
-
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 const auth = new google.auth.GoogleAuth({ credentials, scopes: SCOPES });
-// --- FIN DEL BLOQUE DE CONFIGURACIÓN ---
+// --- Fin del bloque de configuración ---
 
 const app = express();
 const port = process.env.PORT || 4000;
 
 app.use(cors({
-  // Asegúrate de que este origen sea el correcto para tu frontend
-  origin: 'https://event-hub-frontend-gamma.vercel.app' 
+  origin: 'https://event-hub-frontend-gamma.vercel.app'
 }));
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// Genera el ID único de 8 caracteres
+// --- Funciones de generación de códigos (sin cambios) ---
 function generatePurchaseCode() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let result = '';
@@ -54,8 +52,6 @@ function generatePurchaseCode() {
     }
     return result;
 }
-
-// --- FUNCIONES PARA GENERAR NÚMEROS PRIMOS ---
 function isPrime(num) {
     if (num <= 1) return false;
     if (num <= 3) return true;
@@ -65,7 +61,6 @@ function isPrime(num) {
     }
     return true;
 }
-
 function generateSixDigitPrime() {
     let primeCandidate;
     do {
@@ -73,10 +68,10 @@ function generateSixDigitPrime() {
     } while (!isPrime(primeCandidate));
     return primeCandidate;
 }
-// --- FIN DE FUNCIONES DE NÚMEROS PRIMOS ---
+// --- Fin de funciones ---
 
+// --- Función de Gemini (sin cambios) ---
 async function extractDataWithGemini(imageBuffer) {
-    // ... (Esta función no cambia, sigue siendo útil para el OCR)
     try {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
@@ -103,105 +98,95 @@ async function extractDataWithGemini(imageBuffer) {
 
 app.post('/api/submit', upload.single('proof'), async (req, res) => {
     try {
-        // --- ACCIÓN #1: GENERAR CÓDIGOS ---
-        const purchaseID = generatePurchaseCode(); // Este es el ID principal
+        const purchaseCode = generatePurchaseCode(); // Este es el ID
+
+        // --- CAMBIO #1: Solo extraemos los campos necesarios del body ---
+        const {
+            name, email, phone, eventName,
+            totalAmount, paymentMethod
+        } = req.body;
+        
+        // Se generan los 3 códigos F1, F2 y P
         const primeF1 = generateSixDigitPrime();
         let primeF2 = generateSixDigitPrime();
-        while (primeF1 === primeF2) { // Asegurarse de que no sean iguales
+        while (primeF1 === primeF2) {
             primeF2 = generateSixDigitPrime();
         }
         const productP = primeF1 * primeF2;
 
-        // --- ACCIÓN #2: EXTRAER DATOS SIMPLIFICADOS DEL BODY ---
-        const {
-            name, email, phone, 
-            totalAmount, paymentMethod, eventName // <-- Se añade eventName
-        } = req.body;
-        
         const file = req.file;
         let ocrData = {};
 
-        // El pago en efectivo no necesita OCR
         if (paymentMethod === 'qr' && file) {
             ocrData = await extractDataWithGemini(file.buffer);
         }
 
-        // --- ACCIÓN #3: PREPARAR LA FILA PARA GOOGLE SHEETS ---
+        // --- CAMBIO #2: Construimos la fila `newRow` con la estructura exacta que necesitas ---
         const newRow = [
-            purchaseID,
-            name || '',
-            email || '',
-            phone || '',
-            primeF1,
-            primeF2,
-            productP.toString(),
-            totalAmount || '',
-            paymentMethod || '',
-            (paymentMethod === 'qr' && file) ? 'Sí' : 'No', // Comprobante Enviado
-            new Date().toISOString(),
-            ocrData.sender || 'N/A',
-            ocrData.receiver || 'N/A',
-            ocrData.amount || 'N/A',
-            ocrData.dateTime || 'N/A',
-            '' // Columna "Validado" se deja en blanco
+            purchaseCode,         // ID
+            name || '',           // NOMBRE
+            email || '',          // CORREO
+            phone || '',          // TELEFONO
+            primeF1,              // F1
+            primeF2,              // F2
+            productP.toString(),  // P
+            totalAmount || '',    // TOTAL
+            paymentMethod || '',  // PAGO
+            (paymentMethod === 'qr' && file) ? 'Sí' : 'No', // COMPROBANTE ENVIADO
+            new Date().toISOString(), // HORA
+            ocrData.sender || 'N/A',   // OCR Nombre Emisor
+            ocrData.receiver || 'N/A', // OCR Nombre Receptor
+            ocrData.amount || 'N/A',   // OCR Monto
+            ocrData.dateTime || 'N/A', // OCR Fecha/Hora
+            ''                    // Validado (en blanco)
         ];
 
         const sheets = google.sheets({ version: 'v4', auth });
         await sheets.spreadsheets.values.append({
             spreadsheetId: GOOGLE_SHEET_ID,
-            // Rango ajustado al número de columnas: A hasta P
-            range: `${eventName}!A:P`, 
+            // --- CAMBIO #3: El rango se ajusta a 16 columnas (A:P) y usa el nombre del evento ---
+            range: `${eventName || 'Respuestas'}!A:P`, 
             valueInputOption: 'USER_ENTERED',
             resource: {
                 values: [newRow],
             },
         });
 
-        // --- ACCIÓN #4: ENVIAR NOTIFICACIÓN A TELEGRAM ---
-        const telegramBaseMessage = `
+        // --- CAMBIO #4: Mensajes de Telegram simplificados ---
+        const telegramMessage = `
 Nuevo Registro para *${eventName}* 🎟️
 
-ID de Compra: *${purchaseID}*
-
---- Datos del Cliente ---
+ID: *${purchaseCode}*
 Nombre: ${name}
-Monto Pagado: ${totalAmount} Bs.
+Monto: ${totalAmount} Bs.
 Método: ${paymentMethod}
-
---- Códigos Únicos ---
-F1: \`${primeF1}\`
-F2: \`${primeF2}\`
-P: \`${productP}\`
 `;
 
         const ocrSection = `
---- Verificación OCR ---
-Emisor: ${ocrData.sender || 'No detectado'}
-Monto (OCR): ${ocrData.amount || 'No detectado'}
+--- OCR del Comprobante ---
+Emisor: ${ocrData.sender || 'N/A'}
+Monto: ${ocrData.amount || 'N/A'}
 `;
-
-        // Añade la sección OCR solo si el pago fue por QR
-        const finalTelegramMessage = paymentMethod === 'qr' 
-            ? telegramBaseMessage + ocrSection 
-            : telegramBaseMessage;
         
+        // Unimos el mensaje base con la sección de OCR si existe
+        const finalCaption = telegramMessage + ( (paymentMethod === 'qr' && file) ? ocrSection : '' );
+
         if (paymentMethod === 'qr' && file) {
             const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
             const formData = new FormData();
             formData.append('chat_id', TELEGRAM_CHAT_ID);
-            formData.append('caption', finalTelegramMessage);
+            formData.append('caption', finalCaption);
             formData.append('parse_mode', 'Markdown'); 
             formData.append('photo', file.buffer, { filename: file.originalname });
             await fetch(telegramApiUrl, { method: 'POST', body: formData });
         } else {
-            // Para pagos en taquilla, solo se envía texto
-            const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+             const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
             await fetch(telegramApiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     chat_id: TELEGRAM_CHAT_ID,
-                    text: finalTelegramMessage,
+                    text: finalCaption, // Usamos el mismo mensaje simplificado
                     parse_mode: 'Markdown',
                 }),
             });
