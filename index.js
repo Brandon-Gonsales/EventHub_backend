@@ -37,9 +37,31 @@ const auth = new google.auth.GoogleAuth({ credentials, scopes: SCOPES });
 const app = express();
 const port = process.env.PORT || 4000;
 
+// --- INICIO DEL CAMBIO: CONFIGURACIÓN DE CORS MEJORADA ---
+
+// Lista de los orígenes (dominios) que tienen permiso para hacer peticiones a tu backend.
+const allowedOrigins = [
+  'https://event-hub-frontend-gamma.vercel.app', // Tu dominio de producción en Vercel
+  'http://localhost:3000',                      // Para pruebas locales (si usas create-react-app)
+  'http://localhost:5173'                       // Para pruebas locales (si usas Vite)
+];
+
 app.use(cors({
-  origin: 'https://event-hub-frontend-gamma.vercel.app'
+  origin: function (origin, callback) {
+    // Si la petición no tiene un 'origin' (ej. una app móvil o Postman), la permitimos.
+    if (!origin) return callback(null, true);
+    
+    // Si el 'origin' de la petición está en nuestra lista de dominios permitidos, la permitimos.
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'La política de CORS para este sitio no permite el acceso desde el origen especificado.';
+      return callback(new Error(msg), false);
+    }
+    
+    return callback(null, true);
+  }
 }));
+
+// --- FIN DEL CAMBIO ---
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
