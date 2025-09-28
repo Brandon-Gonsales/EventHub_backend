@@ -1,4 +1,4 @@
-// index.js - Versión con Códigos Primos
+// index.js - Versión Simplificada con Códigos Primos
 
 const express = require('express');
 const cors = require('cors');
@@ -38,12 +38,14 @@ const app = express();
 const port = process.env.PORT || 4000;
 
 app.use(cors({
-  origin: 'https://event-hub-frontend-gamma.vercel.app'
+  // Asegúrate de que este origen sea el correcto para tu frontend
+  origin: 'https://event-hub-frontend-gamma.vercel.app' 
 }));
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
+// Genera el ID único de 8 caracteres
 function generatePurchaseCode() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let result = '';
@@ -53,13 +55,7 @@ function generatePurchaseCode() {
     return result;
 }
 
-// --- CAMBIO AQUÍ: NUEVAS FUNCIONES PARA GENERAR NÚMEROS PRIMOS ---
-
-/**
- * Verifica si un número es primo.
- * @param {number} num El número a verificar.
- * @returns {boolean} True si es primo, false si no.
- */
+// --- FUNCIONES PARA GENERAR NÚMEROS PRIMOS ---
 function isPrime(num) {
     if (num <= 1) return false;
     if (num <= 3) return true;
@@ -70,32 +66,27 @@ function isPrime(num) {
     return true;
 }
 
-/**
- * Genera un número primo aleatorio de 6 dígitos.
- * @returns {number} Un número primo entre 100000 y 999999.
- */
 function generateSixDigitPrime() {
     let primeCandidate;
     do {
-        // Genera un número entre 100,000 y 999,999
         primeCandidate = Math.floor(100000 + Math.random() * 900000);
     } while (!isPrime(primeCandidate));
     return primeCandidate;
 }
-// --- FIN DEL CAMBIO ---
+// --- FIN DE FUNCIONES DE NÚMEROS PRIMOS ---
 
 async function extractDataWithGemini(imageBuffer) {
-    // ... (Esta función no cambia)
+    // ... (Esta función no cambia, sigue siendo útil para el OCR)
     try {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
         const imagePart = { inlineData: { data: imageBuffer.toString("base64"), mimeType: "image/jpeg" } };
         const prompt = `
-            Eres un experto extrayendo datos de comprobantes de pago peruanos (Yape, Plin, etc.).
+            Eres un experto extrayendo datos de comprobantes de pago de Bolivia (QR Simple).
             Analiza la siguiente imagen y extrae la información en formato JSON:
             - "sender": Nombre completo de quien envió el dinero.
             - "receiver": Nombre completo de quien recibió el dinero.
-            - "amount": Monto de la transacción como string numérico (ej: "250.00").
+            - "amount": Monto de la transacción como string numérico (ej: "70.00").
             - "dateTime": Fecha y hora de la transacción.
             Si no encuentras un campo, usa el valor "No encontrado".
             Responde únicamente con el objeto JSON.`;
@@ -112,118 +103,111 @@ async function extractDataWithGemini(imageBuffer) {
 
 app.post('/api/submit', upload.single('proof'), async (req, res) => {
     try {
-        const purchaseCode = generatePurchaseCode();
+        // --- ACCIÓN #1: GENERAR CÓDIGOS ---
+        const purchaseID = generatePurchaseCode(); // Este es el ID principal
+        const primeF1 = generateSixDigitPrime();
+        let primeF2 = generateSixDigitPrime();
+        while (primeF1 === primeF2) { // Asegurarse de que no sean iguales
+            primeF2 = generateSixDigitPrime();
+        }
+        const productP = primeF1 * primeF2;
 
-        // --- CAMBIO AQUÍ: Se reemplaza resellerCode por userProvidedCode ---
+        // --- ACCIÓN #2: EXTRAER DATOS SIMPLIFICADOS DEL BODY ---
         const {
-            name, lastName, email, phone, academicDegree,
-            department, institution, career, userProvidedCode, // <-- CAMBIADO
-            selectedServices, totalAmount, paymentMethod
+            name, email, phone, 
+            totalAmount, paymentMethod, eventName // <-- Se añade eventName
         } = req.body;
         
-        // --- CAMBIO AQUÍ: Se generan los 3 nuevos códigos para cada registro ---
-        const primeA = generateSixDigitPrime();
-        let primeB = generateSixDigitPrime();
-        while (primeA === primeB) { // Nos aseguramos de que no sean el mismo número
-            primeB = generateSixDigitPrime();
-        }
-        const productC = primeA * primeB; // El producto de los dos primos
-
         const file = req.file;
         let ocrData = {};
 
+        // El pago en efectivo no necesita OCR
         if (paymentMethod === 'qr' && file) {
             ocrData = await extractDataWithGemini(file.buffer);
         }
 
-        // --- CAMBIO AQUÍ: La nueva fila para Google Sheets ---
+        // --- ACCIÓN #3: PREPARAR LA FILA PARA GOOGLE SHEETS ---
         const newRow = [
-            purchaseCode,
-            name || '', lastName || '', email || '', phone || '', academicDegree || '',
-            department || '', institution || '', career || '',
-            userProvidedCode || '', // El código que el usuario ingresó
-            primeA,               // Código Primo A (Generado)
-            primeB,               // Código Primo B (Generado)
-            productC.toString(),  // Código Producto C (Generado)
-            selectedServices, totalAmount || '', paymentMethod || '',
-            (paymentMethod === 'qr' && file) ? 'Sí' : 'No',
+            purchaseID,
+            name || '',
+            email || '',
+            phone || '',
+            primeF1,
+            primeF2,
+            productP.toString(),
+            totalAmount || '',
+            paymentMethod || '',
+            (paymentMethod === 'qr' && file) ? 'Sí' : 'No', // Comprobante Enviado
             new Date().toISOString(),
-            ocrData.sender || 'N/A', ocrData.receiver || 'N/A',
-            ocrData.amount || 'N/A', ocrData.dateTime || 'N/A',
+            ocrData.sender || 'N/A',
+            ocrData.receiver || 'N/A',
+            ocrData.amount || 'N/A',
+            ocrData.dateTime || 'N/A',
+            '' // Columna "Validado" se deja en blanco
         ];
 
         const sheets = google.sheets({ version: 'v4', auth });
         await sheets.spreadsheets.values.append({
             spreadsheetId: GOOGLE_SHEET_ID,
-            // --- ¡IMPORTANTE! El rango se expande para incluir las nuevas columnas ---
-            range: 'Respuestas!A:W', 
+            // Rango ajustado al número de columnas: A hasta P
+            range: `${eventName}!A:P`, 
             valueInputOption: 'USER_ENTERED',
             resource: {
                 values: [newRow],
             },
         });
 
-        // --- CAMBIO AQUÍ: Mensajes de Telegram actualizados ---
-        const telegramCaption = `
-Nueva Inscripción Recibida 🚀
+        // --- ACCIÓN #4: ENVIAR NOTIFICACIÓN A TELEGRAM ---
+        const telegramBaseMessage = `
+Nuevo Registro para *${eventName}* 🎟️
 
-Código de Compra: *${purchaseCode}*
+ID de Compra: *${purchaseID}*
 
---- Datos del Inscrito ---
-Nombre: ${name} ${lastName}
-Monto Total Pagado: ${totalAmount}
-Método de Pago: ${paymentMethod}
+--- Datos del Cliente ---
+Nombre: ${name}
+Monto Pagado: ${totalAmount} Bs.
+Método: ${paymentMethod}
 
---- Códigos de Venta ---
-Código Ingresado: \`${userProvidedCode || 'Ninguno'}\`
-Primo A (Generado): \`${primeA}\`
-Primo B (Generado): \`${primeB}\`
-Producto C (Generado): \`${productC}\`
+--- Códigos Únicos ---
+F1: \`${primeF1}\`
+F2: \`${primeF2}\`
+P: \`${productP}\`
+`;
 
+        const ocrSection = `
 --- Verificación OCR ---
 Emisor: ${ocrData.sender || 'No detectado'}
 Monto (OCR): ${ocrData.amount || 'No detectado'}
 `;
 
-        const telegramTextOnly = `
-Nueva Inscripción (Sin QR) 📝
-
-Código de Compra: *${purchaseCode}*
-
---- Datos del Inscrito ---
-Nombre: ${name} ${lastName}
-Monto Total Pagado: ${totalAmount}
-Método de Pago: ${paymentMethod}
-
---- Códigos de Venta ---
-Código Ingresado: \`${userProvidedCode || 'Ninguno'}\`
-Primo A (Generado): \`${primeA}\`
-Primo B (Generado): \`${primeB}\`
-Producto C (Generado): \`${productC}\`
-`;
+        // Añade la sección OCR solo si el pago fue por QR
+        const finalTelegramMessage = paymentMethod === 'qr' 
+            ? telegramBaseMessage + ocrSection 
+            : telegramBaseMessage;
         
         if (paymentMethod === 'qr' && file) {
             const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
             const formData = new FormData();
             formData.append('chat_id', TELEGRAM_CHAT_ID);
-            formData.append('caption', telegramCaption);
+            formData.append('caption', finalTelegramMessage);
             formData.append('parse_mode', 'Markdown'); 
             formData.append('photo', file.buffer, { filename: file.originalname });
             await fetch(telegramApiUrl, { method: 'POST', body: formData });
         } else {
+            // Para pagos en taquilla, solo se envía texto
             const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
             await fetch(telegramApiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     chat_id: TELEGRAM_CHAT_ID,
-                    text: telegramTextOnly,
+                    text: finalTelegramMessage,
                     parse_mode: 'Markdown',
                 }),
             });
         }
 
-        res.status(200).json({ message: "Registro con códigos primos exitoso!" });
+        res.status(200).json({ message: "Registro simplificado exitoso!" });
 
     } catch (error) {
         console.error("Error al procesar el registro:", error);
