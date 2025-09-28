@@ -74,7 +74,7 @@ function generateSixDigitPrime() {
 async function extractDataWithGemini(imageBuffer) {
     try {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
         const imagePart = { inlineData: { data: imageBuffer.toString("base64"), mimeType: "image/jpeg" } };
         const prompt = `
             Eres un experto extrayendo datos de comprobantes de pago de Bolivia (QR Simple).
