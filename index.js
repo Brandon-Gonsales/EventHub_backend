@@ -1,4 +1,4 @@
-// index.js - Versión con Códigos Primos (Corregida y Simplificada)
+// index.js - Versión Corregida
 
 const express = require('express');
 const cors = require('cors');
@@ -70,12 +70,20 @@ function generateSixDigitPrime() {
 }
 // --- Fin de funciones ---
 
-// --- Función de Gemini (sin cambios) ---
-async function extractDataWithGemini(imageBuffer) {
+// --- CAMBIO #1: La función ahora recibe el objeto 'file' completo para usar su mimetype ---
+async function extractDataWithGemini(file) {
     try {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-        const imagePart = { inlineData: { data: imageBuffer.toString("base64"), mimeType: "image/jpeg" } };
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+        
+        // Usamos el buffer del archivo y su mimetype dinámico
+        const imagePart = { 
+            inlineData: { 
+                data: file.buffer.toString("base64"), 
+                mimeType: file.mimetype // <-- CAMBIO AQUÍ: Usamos el mimetype real del archivo
+            } 
+        };
+
         const prompt = `
             Eres un experto extrayendo datos de comprobantes de pago de Bolivia (QR Simple).
             Analiza la siguiente imagen y extrae la información en formato JSON:
@@ -98,15 +106,13 @@ async function extractDataWithGemini(imageBuffer) {
 
 app.post('/api/submit', upload.single('proof'), async (req, res) => {
     try {
-        const purchaseCode = generatePurchaseCode(); // Este es el ID
+        const purchaseCode = generatePurchaseCode();
 
-        // --- CAMBIO #1: Solo extraemos los campos necesarios del body ---
         const {
             name, email, phone, eventName,
             totalAmount, paymentMethod
         } = req.body;
         
-        // Se generan los 3 códigos F1, F2 y P
         const primeF1 = generateSixDigitPrime();
         let primeF2 = generateSixDigitPrime();
         while (primeF1 === primeF2) {
@@ -118,41 +124,33 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
         let ocrData = {};
 
         if (paymentMethod === 'qr' && file) {
-            ocrData = await extractDataWithGemini(file.buffer);
+            // Pasamos el objeto 'file' completo a la función
+            ocrData = await extractDataWithGemini(file); // <-- CAMBIO AQUÍ
         }
 
-        // --- CAMBIO #2: Construimos la fila `newRow` con la estructura exacta que necesitas ---
         const newRow = [
-            purchaseCode,         // ID
-            name || '',           // NOMBRE
-            email || '',          // CORREO
-            phone || '',          // TELEFONO
-            primeF1,              // F1
-            primeF2,              // F2
-            productP.toString(),  // P
-            totalAmount || '',    // TOTAL
-            paymentMethod || '',  // PAGO
-            (paymentMethod === 'qr' && file) ? 'Sí' : 'No', // COMPROBANTE ENVIADO
-            new Date().toISOString(), // HORA
-            ocrData.sender || 'N/A',   // OCR Nombre Emisor
-            ocrData.receiver || 'N/A', // OCR Nombre Receptor
-            ocrData.amount || 'N/A',   // OCR Monto
-            ocrData.dateTime || 'N/A', // OCR Fecha/Hora
-            ''                    // Validado (en blanco)
+            purchaseCode, name || '', email || '', phone || '',
+            primeF1, primeF2, productP.toString(),
+            totalAmount || '', paymentMethod || '',
+            (paymentMethod === 'qr' && file) ? 'Sí' : 'No',
+            new Date().toISOString(),
+            ocrData.sender || 'N/A', ocrData.receiver || 'N/A',
+            ocrData.amount || 'N/A', ocrData.dateTime || 'N/A',
+            ''
         ];
 
+        const sheetName = eventName || 'Respuestas';
         const sheets = google.sheets({ version: 'v4', auth });
         await sheets.spreadsheets.values.append({
             spreadsheetId: GOOGLE_SHEET_ID,
-            // --- CAMBIO #3: El rango se ajusta a 16 columnas (A:P) y usa el nombre del evento ---
-            range: `${eventName || 'Respuestas'}!A:P`, 
+            // --- CAMBIO #2: El nombre de la hoja ahora está entre comillas simples ---
+            range: `'${sheetName}'!A:P`, // <-- CAMBIO AQUÍ
             valueInputOption: 'USER_ENTERED',
             resource: {
                 values: [newRow],
             },
         });
 
-        // --- CAMBIO #4: Mensajes de Telegram simplificados ---
         const telegramMessage = `
 Nuevo Registro para *${eventName}* 🎟️
 
@@ -161,14 +159,11 @@ Nombre: ${name}
 Monto: ${totalAmount} Bs.
 Método: ${paymentMethod}
 `;
-
         const ocrSection = `
 --- OCR del Comprobante ---
 Emisor: ${ocrData.sender || 'N/A'}
 Monto: ${ocrData.amount || 'N/A'}
 `;
-        
-        // Unimos el mensaje base con la sección de OCR si existe
         const finalCaption = telegramMessage + ( (paymentMethod === 'qr' && file) ? ocrSection : '' );
 
         if (paymentMethod === 'qr' && file) {
@@ -186,13 +181,13 @@ Monto: ${ocrData.amount || 'N/A'}
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     chat_id: TELEGRAM_CHAT_ID,
-                    text: finalCaption, // Usamos el mismo mensaje simplificado
+                    text: finalCaption,
                     parse_mode: 'Markdown',
                 }),
             });
         }
 
-        res.status(200).json({ message: "Registro simplificado exitoso!" });
+        res.status(200).json({ message: "Registro exitoso!" });
 
     } catch (error) {
         console.error("Error al procesar el registro:", error);
