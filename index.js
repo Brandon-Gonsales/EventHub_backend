@@ -218,29 +218,41 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
         }
 
         const newRow = [
-            purchaseCode,
-            `${name || ''} ${lastName || ''}`, // Combinar nombre y apellido si esa es la intención para la columna B
-            email || '',
-            phone || '',
-            academicDegree || '', // Este campo no parece estar en tu hoja de cálculo visible.
-            department || '',     // Este campo no parece estar en tu hoja de cálculo visible.
-            institution || '',    // Este campo no parece estar en tu hoja de cálculo visible.
-            career || '',         // Este campo no parece estar en tu hoja de cálculo visible.
-            userProvidedCode || '', // Este campo no parece estar en tu hoja de cálculo visible.
-            primeA,               
-            primeB,               
-            productC.toString(),
-            selectedServices,
-            totalAmount || '', 
-            paymentMethod || '',
-            (paymentMethod === 'qr' && file) ? 'Sí' : 'No',
-            new Date().toISOString(),
-            ocrData.sender || 'N/A', 
-            ocrData.receiver || 'N/A',
-            ocrData.amount || 'N/A', 
-            ocrData.dateTime || 'N/A',
-            '', // Valor para la columna V (Validado), se deja vacío o se pone '0'
-            // La columna W (total) parece ser una fórmula, por lo que no necesitas enviar un valor.
+            // --- Bloque de Datos Personales ---
+            /* A */ purchaseCode,
+            /* B */ `${name || ''} ${lastName || ''}`.trim(), // Nombre y Apellido JUNTOS
+            /* C */ email || '',
+            /* D */ phone || '',
+
+            // --- Columnas Vacías (¡ESTE ES EL PASO CLAVE!) ---
+            /* E */ '',
+            /* F */ '',
+            /* G */ '',
+            /* H */ '',
+            /* I */ '',
+
+            // --- Bloque de Códigos Primos ---
+            /* J */ primeA,                                 // Corresponde a "F1"
+            /* K */ primeB,                                 // Corresponde a "F2"
+            /* L */ productC.toString(),                    // Corresponde a "P"
+
+            // --- Columna Vacía ---
+            /* M */ '',
+
+            // --- Bloque de Pago ---
+            /* N */ totalAmount || '',                      // Corresponde a "TOTAL"
+            /* O */ paymentMethod || '',                    // Corresponde a "PAGO"
+            /* P */ (paymentMethod === 'qr' && file) ? 'Sí' : 'No', // Corresponde a "PROBANTE ENV"
+            /* Q */ new Date().toISOString(),               // Corresponde a "HORA"
+
+            // --- Bloque de Datos OCR ---
+            /* R */ ocrData.sender || 'N/A',
+            /* S */ ocrData.receiver || 'N/A',
+            /* T */ ocrData.amount || 'N/A',
+            /* U */ ocrData.dateTime || 'N/A',
+
+            // --- Bloque de Validación ---
+            /* V */ '0'  // Valor por defecto '0' o '' para "Validado"
         ];
         await sheets.spreadsheets.values.append({
             spreadsheetId: GOOGLE_SHEET_ID,
