@@ -219,23 +219,32 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
 
         const newRow = [
             purchaseCode,
-            name || '', lastName || '', email || '', phone || '', academicDegree || '',
-            department || '', institution || '', career || '',
-            userProvidedCode || '',
-            primeA,               // Código Primo A (Generado y ÚNICO)
-            primeB,               // Código Primo B (Generado y ÚNICO)
+            `${name || ''} ${lastName || ''}`, // Combinar nombre y apellido si esa es la intención para la columna B
+            email || '',
+            phone || '',
+            academicDegree || '', // Este campo no parece estar en tu hoja de cálculo visible.
+            department || '',     // Este campo no parece estar en tu hoja de cálculo visible.
+            institution || '',    // Este campo no parece estar en tu hoja de cálculo visible.
+            career || '',         // Este campo no parece estar en tu hoja de cálculo visible.
+            userProvidedCode || '', // Este campo no parece estar en tu hoja de cálculo visible.
+            primeA,               
+            primeB,               
             productC.toString(),
-            selectedServices, totalAmount || '', paymentMethod || '',
+            selectedServices,
+            totalAmount || '', 
+            paymentMethod || '',
             (paymentMethod === 'qr' && file) ? 'Sí' : 'No',
             new Date().toISOString(),
-            ocrData.sender || 'N/A', ocrData.receiver || 'N/A',
-            ocrData.amount || 'N/A', ocrData.dateTime || 'N/A',
+            ocrData.sender || 'N/A', 
+            ocrData.receiver || 'N/A',
+            ocrData.amount || 'N/A', 
+            ocrData.dateTime || 'N/A',
+            '', // Valor para la columna V (Validado), se deja vacío o se pone '0'
+            // La columna W (total) parece ser una fórmula, por lo que no necesitas enviar un valor.
         ];
-
-        const sheets = google.sheets({ version: 'v4', auth });
         await sheets.spreadsheets.values.append({
             spreadsheetId: GOOGLE_SHEET_ID,
-            range: 'Respuestas!A:W', 
+            range: 'Respuestas!A:V', // AJUSTA EL RANGO para que coincida con los datos enviados
             valueInputOption: 'USER_ENTERED',
             resource: {
                 values: [newRow],
