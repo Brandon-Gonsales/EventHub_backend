@@ -32,8 +32,8 @@ try {
 
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 const auth = new google.auth.GoogleAuth({ credentials, scopes: SCOPES });
+const sheets = google.sheets({ version: 'v4', auth });
 // --- Fin del bloque de configuración ---
-
 const app = express();
 const port = process.env.PORT || 4000;
 
@@ -105,7 +105,7 @@ function generateSixDigitPrime() {
  */
 async function getExistingPrimePairs() {
     try {
-        const sheets = google.sheets({ version: 'v4', auth });
+        //const sheets = google.sheets({ version: 'v4', auth });
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: GOOGLE_SHEET_ID,
             // ¡IMPORTANTE! Asume que los primos están en las columnas K y L.
