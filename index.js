@@ -221,6 +221,7 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
             // --- Bloque de Datos Personales ---
             /* A */ purchaseCode,
             /* B */ `${name || ''} ${lastName || ''}`.trim(), // Nombre y Apellido JUNTOS
+                    '',
             /* C */ email || '',
             /* D */ phone || '',
 
