@@ -44,7 +44,8 @@ const allowedOrigins = [
   'https://event-hub-frontend-gamma.vercel.app', // Tu dominio de producción en Vercel
   'http://localhost:3000',                      // Para pruebas locales (si usas create-react-app)
   'http://localhost:5173',
-  'https://event-hub-frontend-git-master-brandon-gonsales-projects.vercel.app'                       // Para pruebas locales (si usas Vite)
+  'https://event-hub-frontend-git-master-brandon-gonsales-projects.vercel.app',
+  'https://event-hub-frontend-git-develop-brandon-gonsales-projects.vercel.app'                      // Para pruebas locales (si usas Vite)
 ];
 //prueba
 app.use(cors({
