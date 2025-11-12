@@ -150,18 +150,17 @@ async function extractDataWithGemini(imageBuffer) {
         const imagePart = { inlineData: { data: imageBuffer.toString("base64"), mimeType: "image/jpeg" } };
         const prompt = 
         `
-Eres un experto extrayendo datos de comprobantes de pago de Bolivia. Tu objetivo es analizar la imagen y responder únicamente con un objeto JSON.
+Eres un sistema experto de extracción de datos de comprobantes de pago de Bolivia. Tu tarea es analizar una imagen de un comprobante y extraer la siguiente información en un formato JSON estricto.
 
 Extrae los siguientes campos:
-- "sender": Nombre completo de la persona que envió el dinero. Búscalo en etiquetas como 'Pagado por', 'De', 'Enviado por', 'Ordenante', 'Remitente', 'Pagador', 'Cuenta de origen', 'Nombre titular' o 'Nombre del originante'. Si el nombre del remitente no está explícitamente visible en la imagen, usa el valor "No encontrado".
+- "sender": El nombre completo de la persona o entidad que envió el dinero. Busca el nombre asociado a etiquetas clave como 'Pagado por', 'De', 'Enviado por', 'Ordenante', 'Remitente', 'Pagador', 'Nombre titular', 'Nombre del originante' o junto a 'Cuenta de origen'. **Importante:** Algunos comprobantes, especialmente los más simples o generados por cajeros, pueden no mostrar el nombre del remitente. En estos casos, si el nombre no está visible de forma explícita, el valor debe ser "No encontrado".
+- "receiver": El nombre completo de la persona o entidad que recibió el dinero. Busca el nombre asociado a etiquetas como 'A:', 'Para', 'Enviado a', 'Beneficiario', 'Destinatario', 'Nombre del beneficiario', 'Cuenta de destino', 'Cuenta acreditada' o 'Solicitante'.
+- "amount": El monto de la transacción. Extráelo como un string numérico, usando siempre el punto como separador decimal (ejemplo: "100.00"). Ignora cualquier símbolo de moneda (como Bs. o BOB) y si encuentras una coma decimal, conviértela en punto.
+- "dateTime": La fecha y hora exactas de la transacción tal como aparecen en el comprobante. Mantén el formato original que encuentres (ej: "06/10/2025 19:27", "02/Oct/2025 20:25:04").
 
-- "receiver": Nombre completo de la persona que recibió el dinero. Búscalo en etiquetas como 'A:', 'Para', 'Enviado a', 'Beneficiario', 'Destinatario', 'Cuenta de destino', 'Cuenta acreditada' o 'Solicitante'.
-
-- "amount": Monto de la transacción como un string numérico, usando punto como separador decimal (ej: "100.00"). Ignora la moneda (Bs. o BOB) y convierte comas en puntos si es necesario.
-
-- "dateTime": La fecha y hora de la transacción. Conviértela y unifícala siempre al formato YYYY-MM-DD HH:MM. Omite los segundos. Si en la imagen solo aparece la fecha sin la hora, usa 00:00 como hora.
-
-Si no encuentras un campo de manera explícita, usa el valor "No encontrado". Responde únicamente con el objeto JSON.
+Reglas Adicionales:
+- Si un campo no se puede encontrar en la imagen, usa el valor de string "No encontrado".
+- Tu respuesta debe ser únicamente el objeto JSON, sin explicaciones ni texto adicional.
 `
 ;
         const result = await model.generateContent([prompt, imagePart]);
