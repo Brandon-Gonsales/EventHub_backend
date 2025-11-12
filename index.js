@@ -149,14 +149,15 @@ async function extractDataWithGemini(imageBuffer) {
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
         const imagePart = { inlineData: { data: imageBuffer.toString("base64"), mimeType: "image/jpeg" } };
         const prompt = `
-            Eres un experto extrayendo datos de comprobantes de pago peruanos (Yape, Plin, etc.).
-            Analiza la siguiente imagen y extrae la información en formato JSON:
-            - "sender": Nombre completo de quien envió el dinero.
-            - "receiver": Nombre completo de quien recibió el dinero.
-            - "amount": Monto de la transacción como string numérico (ej: "250.00").
-            - "dateTime": Fecha y hora de la transacción.
-            Si no encuentras un campo, usa el valor "No encontrado".
-            Responde únicamente con el objeto JSON.`;
+           Eres un experto extrayendo datos de comprobantes de pago de Bolivia (Banco BCP, BNB, Mercantil, BancoSol, Yape, etc.).
+Analiza la siguiente imagen y extrae la información en formato JSON:
+- "sender": Nombre completo de la persona que envió el dinero. Búscalo asociado a etiquetas como 'Pagado por', 'De', 'Enviado por', 'Ordenante', 'Remitente', 'Pagador', 'Cuenta de origen', 'Nombre titular' o 'Nombre del originante'.
+- "receiver": Nombre completo de la persona que recibió el dinero. Búscalo asociado a etiquetas como 'A:', 'Para', 'Enviado a', 'Beneficiario', 'Destinatario', 'Cuenta de destino', 'Cuenta acreditada' o 'Solicitante'.
+- "amount": Monto de la transacción como un string numérico usando punto como separador decimal (ej: "100.00"). Ignora la moneda (Bs. o BOB) y convierte las comas en puntos si es necesario.
+- "dateTime": Fecha y hora de la transacción. Intenta unificar los diferentes formatos de fecha y hora que encuentres.
+
+Si no encuentras un campo de manera explícita, usa el valor "No encontrado".
+Responde únicamente con el objeto JSON.`;
         const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
         const text = response.text();
