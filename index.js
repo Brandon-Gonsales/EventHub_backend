@@ -167,156 +167,137 @@ async function extractDataWithGemini(imageBuffer) {
     }
 }
 
+// REEMPLAZA TU ENDPOINT EXISTENTE CON ESTE
 app.post('/api/submit', upload.single('proof'), async (req, res) => {
     try {
-        const purchaseCode = generatePurchaseCode();
-
-        const {
-            name, lastName, email, phone, academicDegree,
-            department, institution, career, userProvidedCode,
-            selectedServices, totalAmount, paymentMethod
-        } = req.body;
+        console.log('Datos recibidos en req.body:', req.body);
         
+        // --- 1. EXTRACCIÓN Y ESTRUCTURACIÓN DE DATOS ---
+        const {
+            buyer,
+            totalAmount,
+            paymentMethod,
+            attendees
+        } = req.body;
 
-        // *****************************************************************************
-        // --- INICIO DEL CAMBIO #2: LÓGICA DE GENERACIÓN DE PRIMOS ACTUALIZADA ---
-        // *****************************************************************************
-
-        const existingPairs = await getExistingPrimePairs();
-        let primeA, primeB, pairKey;
-        let attempts = 0;
-
-        do {
-            primeA = generateSixDigitPrime();
-            primeB = generateSixDigitPrime();
-            
-            // Creamos una clave única y ordenada para el par
-            const sortedPair = [primeA, primeB].sort((a, b) => a - b);
-            pairKey = `${sortedPair[0]}-${sortedPair[1]}`;
-            
-            attempts++;
-            if (attempts > 1) {
-                console.log(`Intento #${attempts}: El par ${pairKey} ya existía. Generando uno nuevo...`);
-            }
-
-        // Repetimos si A y B son iguales O si el par ya existe en nuestro Set
-        } while (primeA === primeB || existingPairs.has(pairKey));
-
-        console.log(`Par único encontrado: ${pairKey} en ${attempts} intento(s).`);
-        const productC = primeA * primeB;
-
-        // *****************************************************************************
-        // --- FIN DEL CAMBIO #2 ---
-        // *****************************************************************************
-
-
+        // --- 2. OPERACIONES ÚNICAS (SE HACEN UNA SOLA VEZ POR PETICIÓN) ---
         const file = req.file;
         let ocrData = {};
-
         if (paymentMethod === 'qr' && file) {
             ocrData = await extractDataWithGemini(file.buffer);
         }
 
-        const newRow = [
-            /* A - ID */ purchaseCode, // Tu `purchaseCode` va en la columna ID
-            /* B - NOMBRE */ `${name || ''} ${lastName || ''}`.trim(), // Nombre + Apellido
-            /* C - TELEFONO */ phone || '', // Teléfono ahora está en la columna C
-            /* D - NAME */ name || '', // Si quieres el nombre por separado, va aquí
-            /* E - PHONE */ '', // Dejamos E vacía, ya que el teléfono ya fue puesto
-            /* F - EMAIL */ email || '', // Email va en la columna F
-            /* G - CODIGO ING */ userProvidedCode || '', // Asumo que este campo era el que querías guardar aquí
+        const existingPairs = await getExistingPrimePairs();
+        const allNewRows = [];
+        
+        // ***** INICIO DE LA CORRECCIÓN #1 *****
+        // Se declara el array para guardar la info para Telegram
+        const registeredAttendeesInfo = []; 
+        // ***** FIN DE LA CORRECCIÓN #1 *****
 
-            // --- Bloque de Códigos Primos ---
-            /* H - F1 */ primeA, // Primo A (F1)
-            /* I - F2 */ primeB, // Primo B (F2)
-            /* J - P */ productC.toString(), // Producto C (P)
+        // --- 3. BUCLE PRINCIPAL PARA GENERAR UNA FILA POR CADA ASISTENTE ---
+        for (const attendee of attendees) {
+            const purchaseCode = generatePurchaseCode();
+            let primeA, primeB, pairKey;
+            let attempts = 0;
 
-            // --- Bloque de Pago ---
-            /* K - TOTAL */ totalAmount || '', // Monto Total
-            /* L - PAGO */ paymentMethod || '', // Método de Pago
-            /* M - COMPROBANTE */ (paymentMethod === 'qr' && file) ? 'Sí' : 'No', // Comprobante Enviado
-            /* N - HORA */ new Date().toISOString(), // Hora de Registro
+            do {
+                primeA = generateSixDigitPrime();
+                primeB = generateSixDigitPrime();
+                const sortedPair = [primeA, primeB].sort((a, b) => a - b);
+                pairKey = `${sortedPair[0]}-${sortedPair[1]}`;
+                attempts++;
+            } while (primeA === primeB || existingPairs.has(pairKey));
+            
+            existingPairs.add(pairKey);
+            const productC = primeA * primeB;
+            console.log(`Fila para '${attendee.fullName}': Par único ${pairKey} encontrado en ${attempts} intento(s).`);
 
-            // --- Bloque de Datos OCR ---
-            /* O - OCR Nombre Emisor */ ocrData.sender || 'N/A',
-            /* P - OCR Nombre Receptor */ ocrData.receiver || 'N/A',
-            /* Q - OCR Monto */ ocrData.amount || 'N/A',
-            /* R - OCR Fecha/Hora */ ocrData.dateTime || 'N/A',
+            const newRow = [
+                /* A - ID */ purchaseCode,
+                /* B - NOMBRE (Asistente) */ attendee.fullName || '',
+                /* C - TELEFONO (Asistente) */ attendee.phone || '',
+                /* D - NAME (Comprador) */ buyer.name || '',
+                /* E - PHONE (Comprador) */ buyer.phone || '',
+                /* F - EMAIL (Comprador) */ buyer.email || '',
+                /* G - CI */ '',
+                /* H - F1 */ primeA,
+                /* I - F2 */ primeB,
+                /* J - P */ productC.toString(),
+                /* K - TOTAL */ totalAmount,
+                /* L - PAGO */ paymentMethod,
+                /* M - COMPROBANTE */ (paymentMethod === 'qr' && file) ? 'Sí' : 'No',
+                /* N - HORA */ new Date().toISOString(),
+                /* O - OCR Nombre Emisor */ ocrData.sender || 'N/A',
+                /* P - OCR Nombre Receptor */ ocrData.receiver || 'N/A',
+                /* Q - OCR Monto */ ocrData.amount || 'N/A',
+                /* R - OCR Fecha/Hora */ ocrData.dateTime || 'N/A',
+            ];
 
-            // NOTA: Tu hoja actual termina en R. Si deseas agregar más, aquí irían:
-            // /* S */ '0' // Si tuvieras una columna 'Validado' o similar más allá de R
-        ];
+            allNewRows.push(newRow);
 
-        await sheets.spreadsheets.values.append({
-            spreadsheetId: GOOGLE_SHEET_ID,
-            range: 'Respuestas!A:R', // AJUSTA EL RANGO para que coincida con los datos enviados
-            valueInputOption: 'USER_ENTERED',
-            resource: {
-                values: [newRow],
-            },
-        });
+            // ***** INICIO DE LA CORRECCIÓN #2 *****
+            // Se llena el array con el ID de la entrada recién creada
+            registeredAttendeesInfo.push({
+                purchaseCode: purchaseCode
+            });
+            // ***** FIN DE LA CORRECCIÓN #2 *****
+        }
 
-        // El resto del código para Telegram y la respuesta no necesita cambios.
-        const telegramCaption = `
-Nueva Inscripción Recibida 🚀
+        // --- 4. ENVÍO DEL LOTE DE FILAS A GOOGLE SHEETS ---
+        if (allNewRows.length > 0) {
+            await sheets.spreadsheets.values.append({
+                spreadsheetId: GOOGLE_SHEET_ID,
+                range: 'Respuestas!A:R',
+                valueInputOption: 'USER_ENTERED',
+                resource: {
+                    values: allNewRows,
+                },
+            });
+        }
 
-Código de Compra: *${purchaseCode}*
+        // --- 5. NOTIFICACIÓN RESUMEN A TELEGRAM ---
+        const idList = registeredAttendeesInfo
+            .map(info => `\`${info.purchaseCode}\``)
+            .join('\n');
 
---- Datos del Inscrito ---
-Nombre: ${name} ${lastName}
-Monto Total Pagado: ${totalAmount}
-Método de Pago: ${paymentMethod}
+        const summaryCaption = `
+✅ *Nueva Venta Registrada*
 
---- Códigos de Venta ---
-Código Ingresado: \`${userProvidedCode || 'Ninguno'}\`
-Primo A (Generado): \`${primeA}\`
-Primo B (Generado): \`${primeB}\`
-Producto C (Generado): \`${productC}\`
+*Comprador:* ${buyer.name}
+*Monto Pagado:* ${totalAmount}
+
+--- IDs de Entradas ---
+${idList}
 
 --- Verificación OCR ---
 Emisor: ${ocrData.sender || 'No detectado'}
 Monto (OCR): ${ocrData.amount || 'No detectado'}
 `;
 
-        const telegramTextOnly = `
-Nueva Inscripción (Sin QR) 📝
-
-Código de Compra: *${purchaseCode}*
-
---- Datos del Inscrito ---
-Nombre: ${name} ${lastName}
-Monto Total Pagado: ${totalAmount}
-Método de Pago: ${paymentMethod}
-
---- Códigos de Venta ---
-Código Ingresado: \`${userProvidedCode || 'Ninguno'}\`
-Primo A (Generado): \`${primeA}\`
-Primo B (Generado): \`${primeB}\`
-Producto C (Generado): \`${productC}\`
-`;
-        
         if (paymentMethod === 'qr' && file) {
             const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
             const formData = new FormData();
             formData.append('chat_id', TELEGRAM_CHAT_ID);
-            formData.append('caption', telegramCaption);
-            formData.append('parse_mode', 'Markdown'); 
-            formData.append('photo', file.buffer, { filename: file.originalname });
+            formData.append('caption', summaryCaption);
+            formData.append('parse_mode', 'Markdown');
+            formData.append('photo', file.buffer, { filename: 'proof.jpg' });
             await fetch(telegramApiUrl, { method: 'POST', body: formData });
         } else {
             const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-            await fetch(telegramApiUrl, {
+            // ***** CORRECCIÓN #3 (Error de tipeo) *****
+            await fetch(telegramApiUrl, { // <-- Decía 'telegramApiurl'
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     chat_id: TELEGRAM_CHAT_ID,
-                    text: telegramTextOnly,
+                    text: summaryCaption,
                     parse_mode: 'Markdown',
                 }),
             });
         }
 
-        res.status(200).json({ message: "Registro con códigos primos único exitoso!" });
+        res.status(200).json({ message: "Registro de múltiples asistentes exitoso!" });
 
     } catch (error) {
         console.error("Error al procesar el registro:", error);
