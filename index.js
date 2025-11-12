@@ -110,7 +110,7 @@ async function getExistingPrimePairs() {
             spreadsheetId: GOOGLE_SHEET_ID,
             // ¡IMPORTANTE! Asume que los primos están en las columnas K y L.
             // Si cambias las columnas, debes actualizar este rango.
-            range: 'Respuestas!K:L', 
+            range: 'Respuestas!H:I', 
         });
 
         const rows = response.data.values;
@@ -163,7 +163,7 @@ async function extractDataWithGemini(imageBuffer) {
         return JSON.parse(jsonResponse);
     } catch (error) {
         console.error("Error en la API de Gemini (AI Studio):", error);
-        return { sender: 'Error Gemini', receiver: 'Error Gemini', amount: 'Error Gemini', dateTime: 'Error Gemini' };
+        return { sender: '404', receiver: '404', amount: '404', dateTime: '404' };
     }
 }
 
@@ -218,46 +218,38 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
         }
 
         const newRow = [
-            // --- Bloque de Datos Personales ---
-            /* A */ purchaseCode,
-            /* B */ `${name || ''} ${lastName || ''}`.trim(), // Nombre y Apellido JUNTOS
-                    '',
-            /* C */ email || '',
-            /* D */ phone || '',
-
-            // --- Columnas Vacías (¡ESTE ES EL PASO CLAVE!) ---
-            /* E */ '',
-            /* F */ '',
-            /* G */ '',
-            /* H */ '',
-            /* I */ '',
+            /* A - ID */ purchaseCode, // Tu `purchaseCode` va en la columna ID
+            /* B - NOMBRE */ `${name || ''} ${lastName || ''}`.trim(), // Nombre + Apellido
+            /* C - TELEFONO */ phone || '', // Teléfono ahora está en la columna C
+            /* D - NAME */ name || '', // Si quieres el nombre por separado, va aquí
+            /* E - PHONE */ '', // Dejamos E vacía, ya que el teléfono ya fue puesto
+            /* F - EMAIL */ email || '', // Email va en la columna F
+            /* G - CODIGO ING */ userProvidedCode || '', // Asumo que este campo era el que querías guardar aquí
 
             // --- Bloque de Códigos Primos ---
-            /* J */ primeA,                                 // Corresponde a "F1"
-            /* K */ primeB,                                 // Corresponde a "F2"
-            /* L */ productC.toString(),                    // Corresponde a "P"
-
-            // --- Columna Vacía ---
-            /* M */ '',
+            /* H - F1 */ primeA, // Primo A (F1)
+            /* I - F2 */ primeB, // Primo B (F2)
+            /* J - P */ productC.toString(), // Producto C (P)
 
             // --- Bloque de Pago ---
-            /* N */ totalAmount || '',                      // Corresponde a "TOTAL"
-            /* O */ paymentMethod || '',                    // Corresponde a "PAGO"
-            /* P */ (paymentMethod === 'qr' && file) ? 'Sí' : 'No', // Corresponde a "PROBANTE ENV"
-            /* Q */ new Date().toISOString(),               // Corresponde a "HORA"
+            /* K - TOTAL */ totalAmount || '', // Monto Total
+            /* L - PAGO */ paymentMethod || '', // Método de Pago
+            /* M - COMPROBANTE */ (paymentMethod === 'qr' && file) ? 'Sí' : 'No', // Comprobante Enviado
+            /* N - HORA */ new Date().toISOString(), // Hora de Registro
 
             // --- Bloque de Datos OCR ---
-            /* R */ ocrData.sender || 'N/A',
-            /* S */ ocrData.receiver || 'N/A',
-            /* T */ ocrData.amount || 'N/A',
-            /* U */ ocrData.dateTime || 'N/A',
+            /* O - OCR Nombre Emisor */ ocrData.sender || 'N/A',
+            /* P - OCR Nombre Receptor */ ocrData.receiver || 'N/A',
+            /* Q - OCR Monto */ ocrData.amount || 'N/A',
+            /* R - OCR Fecha/Hora */ ocrData.dateTime || 'N/A',
 
-            // --- Bloque de Validación ---
-            /* V */ '0'  // Valor por defecto '0' o '' para "Validado"
+            // NOTA: Tu hoja actual termina en R. Si deseas agregar más, aquí irían:
+            // /* S */ '0' // Si tuvieras una columna 'Validado' o similar más allá de R
         ];
+
         await sheets.spreadsheets.values.append({
             spreadsheetId: GOOGLE_SHEET_ID,
-            range: 'Respuestas!A:V', // AJUSTA EL RANGO para que coincida con los datos enviados
+            range: 'Respuestas!A:R', // AJUSTA EL RANGO para que coincida con los datos enviados
             valueInputOption: 'USER_ENTERED',
             resource: {
                 values: [newRow],
