@@ -239,6 +239,7 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
                 /* P - OCR Nombre Receptor */ ocrData.receiver || 'N/A',
                 /* Q - OCR Monto */ ocrData.amount || 'N/A',
                 /* R - OCR Fecha/Hora */ ocrData.dateTime || 'N/A',
+                /* S - VALIDADO */ '0',
             ];
 
             allNewRows.push(newRow);
