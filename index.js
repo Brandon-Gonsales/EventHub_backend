@@ -243,6 +243,8 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
             ];
 
             allNewRows.push(newRow);
+            
+            /* S - Prueba */
 
             // ***** INICIO DE LA CORRECCIÓN #2 *****
             // Se llena el array con el ID de la entrada recién creada
