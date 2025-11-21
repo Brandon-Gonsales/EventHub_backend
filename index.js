@@ -46,7 +46,8 @@ const allowedOrigins = [
   'http://localhost:5173',
   'https://event-hub-frontend-git-master-brandon-gonsales-projects.vercel.app',
   'https://event-hub-frontend-git-develop-brandon-gonsales-projects.vercel.app',
-  'https://event-hub-frontend-git-below-brandon-gonsales-projects.vercel.app'                    
+  'https://event-hub-frontend-git-below-brandon-gonsales-projects.vercel.app',
+  'https://event-hub-frontend-git-migrate-brandon-gonsales-projects.vercel.app'                    
 ];
 //prueba
 app.use(cors({
